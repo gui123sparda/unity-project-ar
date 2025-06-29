@@ -1,108 +1,180 @@
 using UnityEngine;
-using UnityEngine.UI;
-using System.Collections;
 using GLTFast;
-using System;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
+using System.Collections.Generic;
+using UnityEngine.Rendering;
+using EnhancedTouch = UnityEngine.InputSystem.EnhancedTouch;
 
 public class ModelLoader : MonoBehaviour
 {
-    public Button loadModelButton;
+    public ARRaycastManager arRaycastManager= null; // Referência ao ARRaycastManager da cena
+    public Material overrideMaterial= null;
+    private string selectedModelPath = null;
+    private bool readyToSpawn = false;
+    
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    static List<ARRaycastHit> hits = new List<ARRaycastHit>();
+
+    void Awake()
+    {
+        
+    }
+
+    void OnEnable()
+    {
+        EnhancedTouch.TouchSimulation.Enable();
+        EnhancedTouch.EnhancedTouchSupport.Enable();
+        EnhancedTouch.Touch.onFingerDown += FingerDown;
+    }
+
+    void OnDisable()
+    {
+        EnhancedTouch.TouchSimulation.Disable();
+        EnhancedTouch.EnhancedTouchSupport.Disable();
+        EnhancedTouch.Touch.onFingerDown -= FingerDown;    
+    }
+
+    void FingerDown(EnhancedTouch.Finger finger)
+    {
+        if (finger.index != 0) return;
+
+        if(arRaycastManager.Raycast(finger.currentTouch.screenPosition,hits,
+        TrackableType.PlaneWithinPolygon)){
+            if (readyToSpawn)
+            {
+                if (finger.index != 0)
+                {
+                    Vector2 touchPos = Input.GetTouch(0).position;
+                    TrySpawnModelAt(touchPos);
+                }
+            }
+        }
+    }
+
     void Start()
     {
-        loadModelButton.onClick.AddListener(OpenFileBrowser);
-
-        #if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR
         if (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(UnityEngine.Android.Permission.ExternalStorageRead))
         {
             UnityEngine.Android.Permission.RequestUserPermission(UnityEngine.Android.Permission.ExternalStorageRead);
         }
-        #endif
+#endif
     }
 
-    void OpenFileBrowser()
+    void Update()
     {
-        // Filtros permitidos
+        if (readyToSpawn)
+        {
+            if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began||Input.GetMouseButtonDown(0))
+            {
+                if (Input.touchCount > 0)
+                {
+                    Vector2 touchPos = Input.GetTouch(0).position;
+                    TrySpawnModelAt(touchPos);
+                }
+                else
+                {
+                    
+                    TrySpawnModelAt(Input.mousePosition);
+                }
+                
+            }
+            
+        }
+    }
+
+    // CHAMADO PELO BOTÃO
+    public void AbrirSeletorDeModelo()
+    {
         SimpleFileBrowser.FileBrowser.SetFilters(true, new string[] { ".glb", ".gltf" });
         SimpleFileBrowser.FileBrowser.SetDefaultFilter(".glb");
 
-        // Correção: parâmetros corretos para ShowLoadDialog
         SimpleFileBrowser.FileBrowser.ShowLoadDialog(
             onSuccess: (string[] paths) =>
             {
                 if (paths.Length > 0)
                 {
-                    Debug.Log("Arquivo selecionado: " + paths[0]);
-                    LoadGLBModel(paths[0]);
+                    selectedModelPath = paths[0];
+                    readyToSpawn = true;
+                    Debug.Log("Modelo selecionado. Toque na superfície AR para instanciar.");
                 }
             },
-            onCancel: () => {
-                Debug.Log("Seleção cancelada");
-            },
+            onCancel: () => Debug.Log("Seleção cancelada."),
             pickMode: SimpleFileBrowser.FileBrowser.PickMode.Files,
-            allowMultipleSelection: false,
-            initialPath: "/storage/emulated/0/",
+            allowMultiSelection: false,
+            initialPath: Application.persistentDataPath,
             title: "Selecione um modelo",
             loadButtonText: "Carregar"
         );
     }
 
-    void OnFileSelected(string path)
+    void TrySpawnModelAt(Vector2 screenPosition)
     {
-        Debug.Log("Caminho selecionado: " + path);
-        LoadGLBModel(path);
+        if (arRaycastManager.Raycast(screenPosition, hits, TrackableType.PlaneWithinPolygon))
+        {
+            Pose hitPose = hits[0].pose;
+
+            LoadGLBModel(selectedModelPath, hitPose.position);
+            readyToSpawn = false;
+        }
+        else
+        {
+            Debug.LogWarning("Toque não acertou nenhum plano AR.");
+        }
     }
 
-    async void LoadGLBModel(string path)
-{
-    var gltf = new GltfImport();
-    bool success = await gltf.Load(new Uri(path));
+    async void LoadGLBModel(string path, Vector3 spawnPosition)
+    {
+        var gltf = new GltfImport();
+        bool success = await gltf.Load(new System.Uri(path));
 
         if (success)
         {
             GameObject modelParent = new GameObject("ModeloImportado");
-
-            // Instancia o modelo de forma assíncrona
             await gltf.InstantiateMainSceneAsync(modelParent.transform);
+            modelParent.AddComponent<DragObject>();
 
-            // Calcula os limites do modelo (bounds) somando todos os MeshRenderers
-            Bounds combinedBounds = new Bounds();
+            Bounds bounds = new Bounds();
             bool initialized = false;
 
             foreach (var renderer in modelParent.GetComponentsInChildren<MeshRenderer>())
             {
                 if (!initialized)
                 {
-                    combinedBounds = renderer.bounds;
+                    bounds = renderer.bounds;
                     initialized = true;
                 }
                 else
                 {
-                    combinedBounds.Encapsulate(renderer.bounds);
+                    bounds.Encapsulate(renderer.bounds);
                 }
-            }
 
-            // Eleva o modelo para que sua base fique exatamente no Y = 0
-            float bottomY = combinedBounds.min.y;
-            modelParent.transform.position = new Vector3(0, -bottomY, 0);
-
-            Debug.Log("Modelo carregado e reposicionado acima da superfície!");
-
-
-
-            foreach (var renderer in modelParent.GetComponentsInChildren<MeshRenderer>())
-            {
-                if (renderer.gameObject.GetComponent<Collider>() == null)
+                if (!renderer.GetComponent<Collider>())
                     renderer.gameObject.AddComponent<BoxCollider>();
-            }
+
                 
-                modelParent.AddComponent<DragObject>();
+                renderer.enabled = true;
+
+                if (overrideMaterial != null)
+                renderer.material = overrideMaterial;
+            }
+
+            // Ajusta o modelo para que fique alinhado com o chão detectado
+            float bottomY = bounds.min.y;
+            spawnPosition.y -= bottomY;
+            modelParent.transform.position = spawnPosition;
+
+            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            sphere.transform.position = spawnPosition;
+            sphere.transform.localScale = Vector3.one * 0.05f;
+            sphere.GetComponent<Renderer>().material.color = Color.red;
+
+            Debug.Log("Modelo instanciado em: " + spawnPosition);
         }
         else
         {
             Debug.LogError("Erro ao carregar modelo GLB.");
         }
-}
     }
-
+}

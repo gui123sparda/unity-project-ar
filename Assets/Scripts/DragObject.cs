@@ -1,19 +1,29 @@
+
 using UnityEngine;
+using GLTFast.Schema;
+using Camera = UnityEngine.Camera;
 
 public class DragObject : MonoBehaviour
 {
-    private Camera cam;
+    public Camera cam;
     private Plane dragPlane;
     private Vector3 offset;
     private bool dragging = false;
 
-    void Start()
+
+
+    void Awake()
     {
-        cam = Camera.main;
+        cam = GameObject.FindGameObjectWithTag("MainCamera").GetComponent<Camera>();
     }
 
     void Update()
     {
+        if (cam == null)
+        {
+            cam = GameObject.FindGameObjectWithTag("MainCamera").GetComponent<Camera>();
+        }
+
         if (Input.touchSupported && Input.touchCount > 0)
         {
             Touch touch = Input.GetTouch(0);
