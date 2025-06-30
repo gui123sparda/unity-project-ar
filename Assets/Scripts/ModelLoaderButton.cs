@@ -1,11 +1,12 @@
-using System.IO;
-using GLTFast;
 using UnityEngine;
+using System.IO;
+using System.Collections;
+using GLTFast;
 using EnhancedTouch = UnityEngine.InputSystem.EnhancedTouch;
+using NativeFilePickerNamespace;
 
 public class ModelLoaderButton : MonoBehaviour
 {
-
     private string selectedModelPath = null;
     private bool readyToSpawn = false;
 
@@ -13,142 +14,130 @@ public class ModelLoaderButton : MonoBehaviour
     {
         EnhancedTouch.TouchSimulation.Enable();
         EnhancedTouch.EnhancedTouchSupport.Enable();
-        EnhancedTouch.Touch.onFingerDown += FingerDown;
+        EnhancedTouch.Touch.onFingerDown += OnTouch;
     }
 
     void OnDisable()
     {
-        EnhancedTouch.TouchSimulation.Disable();
+        EnhancedTouch.Touch.onFingerDown -= OnTouch;
         EnhancedTouch.EnhancedTouchSupport.Disable();
-        EnhancedTouch.Touch.onFingerDown -= FingerDown;    
+        EnhancedTouch.TouchSimulation.Disable();
     }
 
-    void FingerDown(EnhancedTouch.Finger finger)
+    void OnTouch(EnhancedTouch.Finger finger)
     {
-        if (finger.index != 0) return;
+        if (!readyToSpawn || finger.index != 0)
+            return;
 
-        if (finger.index != 0)
-                {
-                    Vector2 touchPos = Input.GetTouch(0).position;
-                    TrySpawnModelAt(touchPos);
-                }
-        
+        Vector2 screenPosition = finger.screenPosition;
+        Vector3 worldPosition = Camera.main.ScreenToWorldPoint(new Vector3(screenPosition.x, screenPosition.y, 1f));
+
+        StartCoroutine(LoadGLBModel(selectedModelPath, worldPosition));
+        readyToSpawn = false;
     }
 
-    void TrySpawnModelAt(Vector2 screenPosition)
+    public void AbrirSeletorDeModelo() // Chame esta função por código
     {
-        
-
-            LoadGLBModel(selectedModelPath, screenPosition);
-            readyToSpawn = false;
-        
-    
-        
-        
-    }
-
-    public void SpawnModel()
-    {
-        LoadGLBModel(selectedModelPath, new Vector3(0,0,0));
-    }
-    void Start()
-    {   
-        #if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR
         if (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(UnityEngine.Android.Permission.ExternalStorageRead))
         {
             UnityEngine.Android.Permission.RequestUserPermission(UnityEngine.Android.Permission.ExternalStorageRead);
-            
         }
-        #endif
-        
+#endif
+
+        NativeFilePicker.PickFile((path) =>
+{
+    if (string.IsNullOrEmpty(path))
+    {
+        Debug.Log("Seleção cancelada.");
+        return;
     }
 
-    public void AbrirSeletorDeModelo()
+    string ext = Path.GetExtension(path).ToLowerInvariant();
+    if (ext != ".glb" && ext != ".gltf")
     {
-        
-        SimpleFileBrowser.FileBrowser.SetFilters(true, new string[] { ".glb", ".gltf" });
-        SimpleFileBrowser.FileBrowser.SetDefaultFilter(".glb");
-
-        SimpleFileBrowser.FileBrowser.ShowLoadDialog(
-            onSuccess: (string[] paths) =>
-            {
-                if (paths.Length > 0)
-                {
-                    selectedModelPath = paths[0];
-                    readyToSpawn = true;
-                    SpawnModel();
-                    Debug.Log(selectedModelPath);
-                    Debug.Log("Modelo selecionado. Toque na superfície AR para instanciar.");
-                }
-            },
-            onCancel: () => Debug.Log("Seleção cancelada."),
-            pickMode: SimpleFileBrowser.FileBrowser.PickMode.Files,
-            allowMultiSelection: false,
-            initialPath: Application.persistentDataPath,
-            title: "Selecione um modelo",
-            loadButtonText: "Carregar"
-        );
-
+        Debug.LogWarning("Arquivo inválido: " + ext);
+        return;
     }
 
-    
-    async void LoadGLBModel(string path, Vector3 spawnPosition)
+        StartCoroutine(CopyToPersistentAndPrepare(path));
+
+        }, new string[] { "*/*" }); // permite escolher qualquer coisa
+    }
+
+    IEnumerator CopyToPersistentAndPrepare(string originalPath)
     {
+        string fileName = Path.GetFileName(originalPath);
+        string finalPath = Path.Combine(Application.persistentDataPath, fileName);
+
+        try
+        {
+            File.Copy(originalPath, finalPath, true);
+        }
+        catch (IOException e)
+        {
+            Debug.LogError("Erro ao copiar arquivo: " + e.Message);
+            yield break;
+        }
+
+        yield return null;
+
+        selectedModelPath = finalPath;
+        readyToSpawn = true;
+        Debug.Log("Modelo pronto! Toque na tela para instanciar.");
+    }
+
+    IEnumerator LoadGLBModel(string path, Vector3 spawnPosition)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            Debug.LogError("Caminho nulo.");
+            yield break;
+        }
+
         var gltf = new GltfImport();
-        bool success = await gltf.Load(new System.Uri(path));
+        var uri = new System.Uri(path);
+        var success = gltf.Load(uri);
 
-        if (success)
+        while (!success.IsCompleted)
+            yield return null;
+
+        if (!success.Result)
         {
-            GameObject modelParent = new GameObject("ModeloImportado");
-            await gltf.InstantiateMainSceneAsync(modelParent.transform);
-            modelParent.AddComponent<DragObject>();
-            modelParent.AddComponent<DontDestroy>();
-            modelParent.AddComponent<SkinnedMeshRenderer>();
-
-            Bounds bounds = new Bounds();
-            bool initialized = false;
-
-            foreach (var renderer in modelParent.GetComponentsInChildren<MeshRenderer>())
-            {
-                if (!initialized)
-                {
-                    bounds = renderer.bounds;
-                    initialized = true;
-                }
-                else
-                {
-                    bounds.Encapsulate(renderer.bounds);
-                }
-
-                if (!renderer.GetComponent<Collider>())
-                    renderer.gameObject.AddComponent<BoxCollider>();
-
-
-                renderer.enabled = true;
-
-            }
-
-            // Ajusta o modelo para que fique alinhado com o chão detectado
-            float bottomY = bounds.min.y;
-            spawnPosition.y -= bottomY;
-            modelParent.transform.position = spawnPosition;
-
-            GameObject sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphere.transform.position = spawnPosition;
-            sphere.transform.localScale = Vector3.one * 0.05f;
-            sphere.GetComponent<Renderer>().material.color = Color.red;
-
-            Debug.Log("Modelo instanciado em: " + spawnPosition);
+            Debug.LogError("Erro ao carregar modelo: " + path);
+            yield break;
         }
-        else
+
+        GameObject model = new GameObject("ModeloImportado");
+        
+    
+
+        var instTask = gltf.InstantiateMainSceneAsync(model.transform);
+
+        while (!instTask.IsCompleted)
+            yield return null;
+
+        
+        model.transform.localScale = Vector3.one * 0.05f;
+        model.transform.position = spawnPosition;
+
+        int collidersAdicionados = 0;
+    foreach (Transform t in model.GetComponentsInChildren<Transform>())
+    {
+        var meshRenderer = t.GetComponent<MeshRenderer>();
+        var skinnedMesh = t.GetComponent<SkinnedMeshRenderer>();
+
+        if (meshRenderer != null || skinnedMesh != null)
         {
-            Debug.LogError("Erro ao carregar modelo GLB.");
+            if (t.GetComponent<Collider>() == null)
+            {
+                t.gameObject.AddComponent<BoxCollider>();
+                    t.gameObject.AddComponent<DragObject>();
+                collidersAdicionados++;
+            }
         }
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        
+        Debug.Log("Modelo carregado em: " + spawnPosition);
     }
 }
