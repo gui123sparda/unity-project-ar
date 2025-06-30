@@ -109,7 +109,7 @@ public class ModelLoaderButton : MonoBehaviour
         }
 
         GameObject model = new GameObject("ModeloImportado");
-        
+        model.AddComponent<DontDestroy>();
     
 
         var instTask = gltf.InstantiateMainSceneAsync(model.transform);
@@ -118,7 +118,7 @@ public class ModelLoaderButton : MonoBehaviour
             yield return null;
 
         
-        model.transform.localScale = Vector3.one * 0.05f;
+        model.transform.localScale = Vector3.one;
         model.transform.position = spawnPosition;
 
         int collidersAdicionados = 0;
@@ -132,7 +132,8 @@ public class ModelLoaderButton : MonoBehaviour
             if (t.GetComponent<Collider>() == null)
             {
                 t.gameObject.AddComponent<BoxCollider>();
-                    t.gameObject.AddComponent<DragObject>();
+                t.gameObject.AddComponent<DragObject>();
+                
                 collidersAdicionados++;
             }
         }
