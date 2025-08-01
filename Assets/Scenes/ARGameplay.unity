@@ -215,7 +215,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_TrackingType: 0
-  m_UpdateType: 0
+  m_UpdateType: 1
   m_IgnoreTrackingState: 0
   m_PositionInput:
     m_UseReference: 0
@@ -407,7 +407,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_RenderShadows: 1
+  m_RenderShadows: 0
   m_RequiresDepthTextureOption: 2
   m_RequiresOpaqueTextureOption: 2
   m_CameraType: 0
@@ -663,6 +663,11 @@ MonoBehaviour:
   - {fileID: 6133103836571093590, guid: 542477d3feb63514cbeb0ddbe815a1c6, type: 3}
   - {fileID: 881224981297387522, guid: 44c67961dc02e024e8a9b8ae577acccf, type: 3}
   - {fileID: 70452412388061869, guid: 25d1244e2a1fecc46bc3f63ce9616923, type: 3}
+  - {fileID: 70452412388061869, guid: 143d66cff89a40349984d0a158f5b655, type: 3}
+  - {fileID: 70452412388061869, guid: ed2aca07a0594854e8878e6a1a2622bd, type: 3}
+  - {fileID: 70452412388061869, guid: a7337f1f331a23c46847bb39c7ddfe31, type: 3}
+  - {fileID: 70452412388061869, guid: 25a01c66eb9048e49a06ea70112fab45, type: 3}
+  - {fileID: 70452412388061869, guid: da89da547b221ad42bbe4f304fcee8b2, type: 3}
 --- !u!114 &651543428
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -679,7 +684,7 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   m_SerializedLibrary: {fileID: 11400000, guid: 5d9fa778483f3dc45ac20ce8dcfa5581, type: 2}
-  m_MaxNumberOfMovingImages: 5
+  m_MaxNumberOfMovingImages: 10
   m_TrackedImagePrefab: {fileID: 0}
 --- !u!1 &832575517
 GameObject:
