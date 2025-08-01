@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
-using UnityEngine.XR.ARFoundation.VisualScripting;
 using UnityEngine.XR.ARSubsystems;
 
 public class MultipleImageTrackingManager : MonoBehaviour
@@ -10,19 +9,18 @@ public class MultipleImageTrackingManager : MonoBehaviour
     [SerializeField] List<GameObject> prefabsToSpawn = new List<GameObject>();
 
     private ARTrackedImageManager _trackeImageManager;
-
     private Dictionary<string, GameObject> _arObjects;
 
+    private bool _trackingEnabled = true;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         _trackeImageManager = GetComponent<ARTrackedImageManager>();
         if (_trackeImageManager == null) return;
+
         _trackeImageManager.trackablesChanged.AddListener(OnImagesTrackedChanged);
         _arObjects = new Dictionary<string, GameObject>();
         SetupSceneElements();
-
     }
 
     private void OnDestroy()
@@ -32,47 +30,67 @@ public class MultipleImageTrackingManager : MonoBehaviour
 
     void OnImagesTrackedChanged(ARTrackablesChangedEventArgs<ARTrackedImage> eventArgs)
     {
+        if (!_trackingEnabled) return;
+
         foreach (var trackedImage in eventArgs.added)
-        {
             UpdateTrackedImages(trackedImage);
-        }
 
         foreach (var trackedImage in eventArgs.updated)
-        {
             UpdateTrackedImages(trackedImage);
-        }
-        
+
         foreach (var trackedImage in eventArgs.removed)
-        {
             UpdateTrackedImages(trackedImage.Value);
-        }
     }
 
     void UpdateTrackedImages(ARTrackedImage trackedImage)
     {
-        if (trackedImage == null) return;
+        if (trackedImage == null || !_trackingEnabled) return;
+
+        var name = trackedImage.referenceImage.name;
+
+        if (!_arObjects.ContainsKey(name)) return;
+
+        GameObject obj = _arObjects[name];
+
         if (trackedImage.trackingState is TrackingState.Limited or TrackingState.None)
         {
-            _arObjects[trackedImage.referenceImage.name].gameObject.SetActive(false);
+            obj.SetActive(false);
             return;
         }
-        _arObjects[trackedImage.referenceImage.name].gameObject.SetActive(true);
-        _arObjects[trackedImage.referenceImage.name].transform.position = trackedImage.transform.position;
-        _arObjects[trackedImage.referenceImage.name].transform.rotation = trackedImage.transform.rotation;
+
+        obj.SetActive(true);
+        obj.transform.position = trackedImage.transform.position;
+        obj.transform.rotation = trackedImage.transform.rotation;
     }
+
     private void SetupSceneElements()
     {
         foreach (var prefab in prefabsToSpawn)
         {
             var arObject = Instantiate(prefab, Vector3.zero, Quaternion.identity);
             arObject.name = prefab.name;
-            arObject.gameObject.SetActive(false);
+            arObject.SetActive(false);
             _arObjects.Add(arObject.name, arObject);
         }
     }
-    // Update is called once per frame
-    void Update()
+
+    /// <summary>
+    /// Para o rastreamento e mantém os objetos fixos na última posição detectada.
+    /// </summary>
+    public void StopTracking()
     {
-        
+        _trackingEnabled = false;
+        _trackeImageManager.enabled = false;
     }
+
+    /// <summary>
+    /// Retoma o rastreamento das imagens, reativando o sistema.
+    /// </summary>
+    public void ResumeTracking()
+    {
+        _trackeImageManager.enabled = true;
+        _trackingEnabled = true;
+    }
+
+    void Update() { }
 }
